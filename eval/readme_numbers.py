@@ -25,7 +25,7 @@ def redteam() -> str:
             ("All layers, version 1 credential", red["runs"]["inprocess-v1"]),
             ("Boundary layers removed", red["runs"]["ablation"])]
     out = ["| Run | Attacks | Got through | Unsafe approvals | Reads of other customers "
-           "| Missing log entries | Writes still open |",
+           "| Actions not in the log | Writes still open |",
            "|---|---|---|---|---|---|---|"]
     for label, run in rows:
         s = run["summary"]["overall"]

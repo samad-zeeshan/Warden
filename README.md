@@ -1,6 +1,6 @@
 # Warden
 
-Warden is an automated security guard for changes to live software. It approves boring changes and blocks dangerous ones. It asks a person only when it is unsure. It keeps a log that shows any later edit. A tricked AI assistant cannot talk it into a bad decision.
+Warden is an automated security guard for changes to live software. It approves safe changes and blocks dangerous ones. It asks a person only when it is unsure. It keeps a log that shows any later edit. A tricked AI assistant cannot talk it into a bad decision.
 
 An AI assistant does the routine work on each change request. It never has the power to approve anything alone. Each credential that it gets names one customer and one request. The assistant gets each tool only when a step needs that tool. Rules on the server make each decision, and the log shows any later edit.
 
@@ -13,7 +13,7 @@ An AI assistant does the routine work on each change request. It never has the p
 - an attack from the test set,
 - an edit to an old log entry, which your browser catches.
 
-A recording of about 18 seconds is in [docs/demo.mp4](docs/demo.mp4).
+A video of about 18 seconds is in [docs/demo.mp4](docs/demo.mp4).
 ![The Warden demo approves a safe change, refuses an attack and catches an edited log entry.](docs/demo.gif)
 
 ## How it works
@@ -53,7 +53,7 @@ Each table comes from files in `eval/` through `python -m eval.readme_numbers`. 
 - messages from the server,
 - a fake tool from another server.
 
-| Run | Attacks | Got through | Unsafe approvals | Reads of other customers | Missing log entries | Writes still open |
+| Run | Attacks | Got through | Unsafe approvals | Reads of other customers | Actions not in the log | Writes still open |
 |---|---|---|---|---|---|---|
 | All layers, MCP over HTTP | 84 | 0 | 0 | 0 | 0 | 0 |
 | All layers, live Keycloak and Postgres | 84 | 0 | 0 | 0 | 0 | not probed |
@@ -85,7 +85,7 @@ With all layers on, none of the planted requests happened. This result held over
 
 The test ran 672 trials. The 7 forgery methods got 0 calls served, which is the goal. A stolen live credential got 50 of 56 calls served, which is bad.
 
-Signatures and the exchange rules stop forged scope. They do not stop a stolen live credential. The binding cannot tell a thief from the task that got the credential. Tokens tied to the sender would stop it, but Warden does not have them yet.
+Signatures and the exchange rules stop forged scope. They do not stop a stolen live credential. This check cannot tell a thief from the task that got the credential. Tokens tied to the sender would stop it, but Warden does not have them yet.
 
 **A language model picks the calls.** In this test, a language model chose each call from the planted text and the listed tools.
 
@@ -116,7 +116,7 @@ The projects are synthetic, with the shape of DGF-Bench. The real engine decides
 
 Over all the projects, Warden added work more often than it saved work. That is a bad result for small projects. In those, the upkeep costs more than the reviews that Warden saves. Warden also adds work when its score does not match real outcomes well. Then people must fix bad automatic approvals. Warden saves work in large projects where the score matches outcomes well.
 
-The minutes are assumed ranges and the labels are synthetic. So this table shows the shape of the trade-off. It does not forecast the result for a real team.
+The minutes come from guessed ranges. The labels are synthetic. So this table shows the shape of the trade-off. It does not forecast the result for a real team.
 
 **Time per decision.** Each row is one full run of the assistant on one Windows laptop.
 
