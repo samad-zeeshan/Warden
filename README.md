@@ -14,6 +14,7 @@ An AI assistant does the routine work on each change request. It never has the p
 - an edit to an old log entry, which your browser catches.
 
 A video of about 18 seconds is in [docs/demo.mp4](docs/demo.mp4).
+A second video of about 29 seconds explains the project. It is in [docs/explainer.mp4](docs/explainer.mp4).
 ![The Warden demo approves a safe change, refuses an attack and catches an edited log entry.](docs/demo.gif)
 
 ## How it works
