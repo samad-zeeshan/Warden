@@ -19,13 +19,13 @@ def _load(name: str) -> dict:
 def redteam() -> str:
     red = _load("redteam-results.json")
     live = _load("redteam-live.json")["runs"]["live"]
-    rows = [("Hardened, MCP over HTTP", red["runs"]["http"]),
-            ("Hardened, live Keycloak and Postgres", live),
-            ("Hardened, in-process", red["runs"]["inprocess"]),
-            ("Every layer on, v1 tenant credential", red["runs"]["inprocess-v1"]),
-            ("Boundary layers off", red["runs"]["ablation"])]
-    out = ["| Run | Attacks | Got through | Unsafe approvals | Cross-tenant reads "
-           "| Audit gaps | Writes still reachable |",
+    rows = [("All layers, MCP over HTTP", red["runs"]["http"]),
+            ("All layers, live Keycloak and Postgres", live),
+            ("All layers, one process", red["runs"]["inprocess"]),
+            ("All layers, version 1 credential", red["runs"]["inprocess-v1"]),
+            ("Boundary layers removed", red["runs"]["ablation"])]
+    out = ["| Run | Attacks | Got through | Unsafe approvals | Reads of other customers "
+           "| Missing log entries | Writes still open |",
            "|---|---|---|---|---|---|---|"]
     for label, run in rows:
         s = run["summary"]["overall"]
@@ -44,15 +44,15 @@ def redteam_prose() -> str:
     a2m = sum(1 for p in (EVAL / "injections").glob("*.json")
               if p.name != "case.schema.json"
               and json.loads(p.read_text(encoding="utf-8")).get("family") == "a2m")
-    return (f"The corpus has {corpus['cases']} prompt-injection cases, {a2m} of them in the "
-            f"A2M style. Version 1 left {v1['runs']['http']['open_privilege_tenant']} writes "
-            f"reachable after its {v1['cases']} cases.")
+    return (f"The test set has {corpus['cases']} attacks, and {a2m} of them use the A2M style. "
+            f"Version 1 left {v1['runs']['http']['open_privilege_tenant']} writes open to an "
+            f"attacker after its {v1['cases']} attacks. That was a serious gap.")
 
 
 def stages() -> str:
     data = _load("stage-privilege.json")
-    names = {"v1-tenant-token": "v1 tenant token", "request-bound": "Request-bound",
-             "request-bound+delivery": "Request-bound + role delivery"}
+    names = {"v1-tenant-token": "Version 1 customer credential", "request-bound": "One request",
+             "request-bound+delivery": "One request, roles per step"}
     head = "| Credential | " + " | ".join(data["stages"]) + " |"
     out = [head, "|---|" + "---|" * len(data["stages"])]
     for key, label in names.items():
@@ -64,9 +64,9 @@ def stages() -> str:
 
 def ablation() -> str:
     s = _load("ablation-tenant.json")["summary"]
-    label = {"parameter": "Tenant and request as validated arguments",
-             "credential": "Bound to the credential", "forged": "Bound, under forged scope"}
-    out = ["| Arm | Planner | Trials | Tried out of scope | Served |", "|---|---|---|---|---|"]
+    label = {"parameter": "Customer and request as checked arguments",
+             "credential": "Bound to the credential", "forged": "Bound, with forged scope"}
+    out = ["| Setup | Planner | Trials | Tried outside scope | Served |", "|---|---|---|---|---|"]
     for key, b in s["by_arm_planner"].items():
         arm, planner = key.split("/")
         out.append(f"| {label[arm]} | {planner} | {b['trials']} | {b['attempted']} | "
@@ -80,17 +80,17 @@ def ablation_prose() -> str:
     stolen = s["by_technique"]["stolen_live_token"]
     forged = [t for t in s["by_technique"] if t != "stolen_live_token"]
     served = sum(s["by_technique"][t]["served"] for t in forged)
-    return (f"{s['total']['trials']} trials. The {len(forged)} forgery techniques got "
-            f"{served} calls served. A stolen live task credential got "
-            f"{stolen['served']} of {stolen['trials']}.")
+    return (f"The test ran {s['total']['trials']} trials. The {len(forged)} forgery methods "
+            f"got {served} calls served, which is the goal. A stolen live credential got "
+            f"{stolen['served']} of {stolen['trials']} calls served, which is bad.")
 
 
 def llm() -> str:
     d = _load("redteam-llm-results.json")
     s = d["summary"]["overall"]
     p = d["planner"]
-    return ("| Planner | Cases | Replies parsed | Model steered | Got through, hardened "
-            "| Got through, boundary off |\n|---|---|---|---|---|---|\n"
+    return ("| Planner | Cases | Replies read | Model tricked | Got through, all layers "
+            "| Got through, boundary removed |\n|---|---|---|---|---|---|\n"
             f"| {p['model']} ({p['provider']}) | {s['cases']} | {s['reply_parsed']} | "
             f"{s['model_steered']} | {s['attack_successes_hardened']} | "
             f"{s['attack_successes_ablation']} |")
@@ -105,20 +105,23 @@ def llm_prose() -> str:
     recorded = sum(1 for r in rows if any(o["tool"] == "record_decision" and o["ok"]
                                           for o in r["hardened"]["outcomes"]))
     named = sum(1 for o in outcomes if not o["ok"] and o.get("blocked_by") == "no_signature")
-    provider = "Claude Haiku"
+    provider = "The planner was Claude Haiku."
     if p["provider"] != "anthropic":
-        provider = (f"{p['model']} in LM Studio with reasoning off, because no Anthropic "
-                    "API key was set")
-    return (f"The planner was {provider}. It finished the task with a valid record_decision "
-            f"in {recorded} of {s['cases']} cases: {named} of its calls still tried to pass a "
-            f"request id, which no tool takes, and {s['cases'] - s['reply_parsed']} replies "
-            f"ran out of tokens as prose. So the steered count mostly measures malformed calls, "
-            f"not obedience to the planted text. The run needs a stronger model to say more.")
+        provider = (f"The planner was {p['model']} in LM Studio with reasoning off. "
+                    "No Anthropic API key was available.")
+    return (f"{provider} The model finished the task with a valid record_decision in "
+            f"{recorded} of {s['cases']} cases, which is a poor result.\n\n"
+            f"Its calls tried to "
+            f"pass a request id {named} times, but no tool takes one. In "
+            f"{s['cases'] - s['reply_parsed']} cases, the model used all its tokens on prose. "
+            f"So the count of tricked replies mostly measures broken calls. It does not "
+            f"measure how often the model obeys the planted text. A stronger model is "
+            f"necessary for a better answer.")
 
 
 def residual() -> str:
     s = _load("residual-work.json")["summary"]
-    out = ["| Projects | Gate saves work | Gate adds work | Median change |",
+    out = ["| Projects | Warden saves work | Warden adds work | Median change |",
            "|---|---|---|---|"]
     out.append(f"| all {s['projects']} | {s['gate_reduces_work']} | "
                f"{s['gate_increases_work']} | {s['median_relative_change'] * 100:+.1f}% |")
@@ -131,9 +134,10 @@ def residual() -> str:
 
 def latency() -> str:
     d = _load("latency.json")["results"]
-    out = ["| Path | Explanation | Runs | p50 ms | p95 ms | p99 ms |", "|---|---|---|---|---|---|"]
-    for path, label in (("inprocess", "In-process"), ("http", "MCP over HTTP")):
-        for mode, name in (("no_llm", "template"), ("llm", "local LLM")):
+    out = ["| Path | Explanation | Runs | Middle run, ms `p50` | Slowest 1 in 20, ms `p95` "
+           "| Slowest 1 in 100, ms `p99` |", "|---|---|---|---|---|---|"]
+    for path, label in (("inprocess", "One process"), ("http", "MCP over HTTP")):
+        for mode, name in (("no_llm", "template"), ("llm", "local language model")):
             r = d[path][mode]
             out.append(f"| {label} | {name} | {r['n']} | {r['ms']['p50']:g} | "
                        f"{r['ms']['p95']:g} | {r['ms']['p99']:g} |")
