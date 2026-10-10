@@ -1,6 +1,17 @@
 /* Warden demo styles: the guard's ledger. Paper, ink, one red for denials, one green for approvals.
 
-   Light only on purpose. The page imitates a printed ledger, and a dark ledger stops reading as paper. */
+   Light by default on purpose. The page imitates a printed ledger. Only the totals section turns
+   the page to ink, once, like a stamped summary page. */
+
+/* Registered so the ink flip can tween the tokens. Browsers without @property just snap. */
+@property --paper { syntax: "<color>"; inherits: true; initial-value: #f3f2ee; }
+@property --paper-raised { syntax: "<color>"; inherits: true; initial-value: #fafaf7; }
+@property --ink { syntax: "<color>"; inherits: true; initial-value: #17191b; }
+@property --ink-2 { syntax: "<color>"; inherits: true; initial-value: #4b4f53; }
+@property --ink-3 { syntax: "<color>"; inherits: true; initial-value: #6b6f73; }
+@property --rule { syntax: "<color>"; inherits: true; initial-value: #cfccc3; }
+@property --rule-strong { syntax: "<color>"; inherits: true; initial-value: #a9a59b; }
+@property --approve { syntax: "<color>"; inherits: true; initial-value: #1e5a3e; }
 
 :root {
   color-scheme: light;
@@ -17,6 +28,7 @@
   --deny-wash: #f4e1dd;
   --approve: #1e5a3e;
   --approve-wash: #dfeae3;
+  --approve-lit: #8cc7a4;
   --focus: #17191b;
 
   --font-display: "Newsreader", "Iowan Old Style", Georgia, serif;
@@ -59,7 +71,70 @@ body {
   font-kerning: normal;
   -webkit-font-smoothing: antialiased;
   overflow-x: hidden;
+  transition: --paper 700ms var(--ease-out), --paper-raised 700ms var(--ease-out), --ink 700ms var(--ease-out),
+    --ink-2 700ms var(--ease-out), --ink-3 700ms var(--ease-out), --rule 700ms var(--ease-out),
+    --rule-strong 700ms var(--ease-out), --approve 700ms var(--ease-out);
 }
+
+/* The ink page. Paper and ink trade places, the greys swap with them, and the approval green
+   lightens so a zero still reads as good news on a dark ground. */
+body[data-theme="ink"] {
+  --paper: #17191b;
+  --paper-raised: #1f2224;
+  --ink: #f3f2ee;
+  --ink-2: #e8e6df;
+  --ink-3: #a9a59b;
+  --rule: #4b4f53;
+  --rule-strong: #6b6f73;
+  --approve: var(--approve-lit);
+  --focus: #f3f2ee;
+}
+
+.mast, .section, .foot { background: var(--paper); }
+
+/* Section eyebrow: a numbered mono caps label, the way a ledger heads each page. */
+.eyebrow {
+  margin: 0 0 var(--s3);
+  font: 500 0.75rem/1.3 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+}
+.eyebrow span { color: var(--ink); margin-right: 0.6em; }
+
+.tag {
+  display: inline-block;
+  padding: 0 0.4em;
+  border: 1px solid var(--rule-strong);
+  border-radius: var(--radius);
+  font: 400 0.75rem/1.5 var(--font-mono);
+  color: var(--ink-3);
+  vertical-align: 0.1em;
+  overflow-wrap: anywhere;
+}
+.tag:empty { display: none; }
+
+.source-pill {
+  position: fixed;
+  top: 12px;
+  right: max(12px, calc((100vw - 74rem) / 2 + 12px));
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  min-height: 2.25rem;
+  padding: 0 var(--s4);
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  font: 500 0.875rem/1 var(--font-text);
+  text-decoration: none;
+  transition: background-color 160ms ease, color 160ms ease, transform 160ms var(--ease-out);
+}
+@media (hover: hover) and (pointer: fine) {
+  .source-pill:hover { background: var(--paper); color: var(--ink); }
+}
+.source-pill:active { transform: scale(0.97); }
 
 ::selection { background: var(--ink); color: var(--paper); }
 
@@ -103,7 +178,7 @@ a {
 
 /* ----------------------------------------------------------------- masthead */
 
-.mast { padding-top: var(--s6); }
+.mast { padding-top: calc(var(--s6) + 1.75rem); }
 
 /* A heavy rule over a hairline, the way ledgers and old newspapers open a page. */
 .mast__rule {
@@ -417,6 +492,8 @@ a {
   overflow-wrap: anywhere;
 }
 .goal { margin: 0 0 var(--s3); color: var(--ink-2); font-size: 0.9375rem; }
+.verdict .tag { margin-right: 0.3em; }
+.verdict .verdict__note { color: var(--ink-2); font: 400 0.8125rem/1.5 var(--font-mono); overflow-wrap: anywhere; }
 
 /* The verdict lands like a stamp: it scales down onto the page, never up from nothing. */
 .verdict {
@@ -586,18 +663,51 @@ tr[data-state="broken"] .link::after { border-color: var(--deny); background: va
 
 /* ----------------------------------------------------------------- footer */
 
+/* The footer is a second masthead: the name across the full width, one line of voice, then the facts. */
 .foot {
-  border-top: 1px solid var(--ink);
-  padding-block: var(--s5) var(--s7);
-  font-size: 0.875rem;
+  padding-block: 0 var(--s8);
   color: var(--ink-2);
 }
-.foot p { margin: 0 0 var(--s2); max-width: 70ch; }
+.foot .eyebrow { border-top: 3px solid var(--ink); padding-top: var(--s4); }
+/* Newsreader sets "Warden" about 3.4 ems wide, so 26vw fills the column at every width without spilling. */
+.foot__word {
+  margin: var(--s6) 0 0;
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-weight: 500;
+  font-size: clamp(4rem, 26vw, 19rem);
+  line-height: 0.9;
+  letter-spacing: -0.045em;
+  color: var(--ink);
+}
+.foot__voice {
+  margin: var(--s5) 0 var(--s6);
+  max-width: 30ch;
+  font-family: var(--font-display);
+  font-size: clamp(1.375rem, 3vw, 2rem);
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--ink);
+  text-wrap: balance;
+}
+.foot__meta {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: var(--s2) var(--s4);
+  margin: 0;
+  padding-top: var(--s4);
+  border-top: 1px solid var(--rule-strong);
+  font-size: 0.9375rem;
+  max-width: 52rem;
+}
+.foot__meta dt { font: 400 0.8125rem/1.6 var(--font-mono); color: var(--ink-3); }
+.foot__meta dd { margin: 0; overflow-wrap: anywhere; }
 
 /* ----------------------------------------------------------------- reduced motion */
 
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
+  body { transition: none; }
   .verdict { animation: fade 200ms ease both; }
   .btn, .btn:not(:disabled):active, .btn:not(:disabled):hover { transform: none; }
   .link::after { transition: background-color 200ms ease, border-color 200ms ease; }

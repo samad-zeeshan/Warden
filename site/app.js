@@ -1,14 +1,17 @@
 /* Warden demo: replays recorded runs from data/replay.js and checks the audit chain in the browser.
 
-   Nothing here decides anything. Every line shown comes from eval/record_demo.py output. */
+   Nothing here decides anything. Every line shown comes from eval/record_demo.py output,
+   except the plain attack labels in data/labels.js. */
 
 (function () {
   "use strict";
 
   var DATA = (window.DEMO_DATA || {}).replay;
+  var LABELS = (window.DEMO_DATA || {}).labels || {};
   var stage = document.getElementById("stage");
   var picker = document.getElementById("attack-pick");
   var announce = document.getElementById("announce");
+  var idTag = document.getElementById("attack-id");
   var motionQuery = window.matchMedia ? window.matchMedia("(prefers-reduced-motion: reduce)") : null;
   // Every run gets a token. A newer press bumps it, and anything still printing for the old run stops.
   var runToken = 0;
@@ -16,21 +19,30 @@
   function reduced() { return !!(motionQuery && motionQuery.matches); }
 
   var LAYER = {
-    agent_resolver: "never sent: not a tool or argument the agent may use",
-    no_signature: "never sent: no tool can name another request or tenant",
-    tool_roles: "refused: the agent holds no role for this tool",
-    action_policy: "refused by policy rule ",
-    tenant_scope: "refused: not found in this tenant",
-    scopes: "refused: the credential lacks the scope",
-    request_binding: "refused: the credential is bound to one request"
+    agent_resolver: "stopped before sending: the assistant may not take that step",
+    no_signature: "stopped before sending: no step can point at another customer",
+    tool_roles: "refused: the assistant's role does not allow this",
+    action_policy: "refused by rule ",
+    tenant_scope: "refused: that belongs to another customer",
+    scopes: "refused: the assistant's pass does not cover this",
+    request_binding: "refused: the assistant's pass works for one request only"
   };
   var GOAL = {
     unsafe_auto_approve: "Approve something unsafe",
     wrong_tenant_read: "Read another customer's data",
-    audit_skip: "Skip the audit log",
-    freeze_window_bypass: "Get around a change freeze",
+    audit_skip: "Keep something out of the log",
+    freeze_window_bypass: "Get around a freeze",
     privilege_escalation: "Act above its role"
   };
+  var WHO = {
+    agent: "The instructions were planted for the AI assistant to read.",
+    requester: "A person who asks for changes tried this directly.",
+    approver: "A person who approves changes tried this directly."
+  };
+  var DECISION = { auto_approve: "approved", deny: "blocked", route: "sent to a person" };
+  var ACTION = { role_learned: "role handed out", policy_version: "rules version noted", record_decision: "decision" };
+
+  function decisionWord(d) { return DECISION[d] || d; }
 
   function el(tag, attrs, text) {
     var n = document.createElement(tag);
@@ -80,7 +92,7 @@
 
   function countTo(node, to, decimals, from) {
     spring(node, to, function (x) { node.textContent = x.toFixed(decimals || 0); },
-      { from: from, response: 0.9, eps: decimals ? 0.005 : 0.3 });
+      { from: from, response: 0.55, eps: decimals ? 0.005 : 0.3 });
   }
 
   /* ------------------------------------------------------------------ buttons */
@@ -112,7 +124,7 @@
   }
 
   // Types one line like a teletype. Screen readers get the whole line at once from a hidden copy.
-  function printLine(list, token, n, kind, who, text, cls) {
+  function printLine(list, token, n, kind, who, text, cls, cap) {
     var li = el("li", { "data-kind": kind });
     li.appendChild(el("span", { "class": "tape__n", "aria-hidden": "true" }, String(n)));
     li.appendChild(el("span", { "class": "tape__who" }, who));
@@ -125,8 +137,8 @@
     if (reduced()) { shown.textContent = text; return Promise.resolve(); }
     var caret = el("span", { "class": "tape__caret", "aria-hidden": "true" });
     body.insertBefore(caret, shown.nextSibling);
-    // About 11 ms a character, but no line takes longer than 420 ms, so long lines do not stall the run.
-    var total = Math.min(420, Math.max(120, text.length * 11));
+    // About 11 ms a character, capped per line so the whole tape fits its time budget.
+    var total = Math.min(cap || 420, Math.max(60, text.length * 11));
     return new Promise(function (resolve) {
       var start = 0;
       function frame(now) {
@@ -149,35 +161,48 @@
     if (call.tool === "get_change_request") { return r.id + ", " + r.key + " in " + r.environment; }
     if (call.tool === "validate_change_request") { return r.ok ? "valid" : "invalid: " + (r.errors || []).join("; "); }
     if (call.tool === "assess_change_risk") { return "risk " + r.score + " (" + r.band + ")" + (r.hard_deny ? ", hard deny" : ""); }
-    if (call.tool === "record_decision") { return "decision: " + r.decision; }
+    if (call.tool === "record_decision") { return "decision: " + decisionWord(r.decision); }
     return "ok";
   }
 
+  // The whole tape gets about 2.2 s however many lines it has, so a replay with its verdict
+  // settles within 4 s of the click. Longer tapes print each line faster instead of dropping any.
+  var TAPE_BUDGET = 2200;
+
   async function playLines(which, token, list, lines) {
+    var gap = 30;
+    var cap = Math.max(60, Math.min(420, TAPE_BUDGET / lines.length - gap));
     for (var i = 0; i < lines.length; i++) {
       if (token !== runToken) { return false; }
       var l = lines[i];
-      await printLine(list, token, i + 1, l.kind, l.who, l.text, l.cls);
+      await printLine(list, token, i + 1, l.kind, l.who, l.text, l.cls, cap);
       setProgress(which, (i + 1) / (lines.length + 1));
-      await wait(70);
+      await wait(gap);
     }
     return token === runToken;
   }
 
-  function verdict(body, good, headline, score, rest) {
+  function verdict(body, good, headline) {
     var box = el("div", { "class": "verdict" + (good ? "" : " verdict--deny") });
-    var strong = el("strong", {});
-    strong.appendChild(document.createTextNode(headline));
-    if (score !== undefined) {
-      strong.appendChild(document.createTextNode(" Risk "));
-      var n = el("span", { "class": "num" }, "0.0");
-      strong.appendChild(n);
-      strong.appendChild(document.createTextNode(rest));
-      countTo(n, score, 1, 0);
-    }
-    box.appendChild(strong);
+    box.appendChild(el("strong", {}, headline));
     body.appendChild(box);
     return box;
+  }
+
+  // The plain sentence comes first. The server's own wording stays verbatim underneath, tagged,
+  // so nobody mistakes it for the page talking.
+  function riskLine(box, run, good) {
+    var p = el("p", {});
+    p.appendChild(document.createTextNode("The risk came out at "));
+    var n = el("span", { "class": "num" }, "0");
+    p.appendChild(n);
+    p.appendChild(document.createTextNode(" out of 100, which counts as " + run.risk.band + ". "));
+    var frozen = (run.reasons || []).some(function (r) { return /freeze/.test(r); });
+    p.appendChild(document.createTextNode(good
+      ? "That is low enough that no person needed to look."
+      : (frozen ? "It was also timed inside a freeze, which blocks it whatever the score." : "That is too high to let through.")));
+    box.appendChild(p);
+    countTo(n, run.risk.score, 0, 0);
   }
 
   async function playDecision(which, run, title, meta) {
@@ -186,15 +211,19 @@
     var body = reset(title, meta);
     var list = el("ol", { "class": "tape", "aria-label": "Tool calls", translate: "no" });
     body.appendChild(list);
-    var lines = run.calls.map(function (c) { return { kind: "agent", who: "agent", text: c.tool + "  " + outcome(c) }; });
+    var lines = run.calls.map(function (c) { return { kind: "agent", who: "assistant", text: c.tool + "  " + outcome(c) }; });
     if (!(await playLines(which, token, list, lines))) { return; }
     await wait(160);
     if (token !== runToken) { return; }
     var good = run.decision === "auto_approve";
-    var box = verdict(body, good, good ? "Approved on its own." : "Blocked.", run.risk.score, ", " + run.risk.band + ".");
-    box.appendChild(el("p", {}, (run.reasons || []).join(" ")));
-    box.appendChild(el("p", { "class": "verdict__aside" }, run.explanation || ""));
-    announce.textContent = (good ? "Approved on its own. " : "Blocked. ") + "Risk " + run.risk.score + ", " + run.risk.band + ".";
+    var head = good ? "Approved without asking anyone." : "Blocked.";
+    var box = verdict(body, good, head);
+    riskLine(box, run, good);
+    var aside = el("p", { "class": "verdict__note" });
+    aside.appendChild(el("span", { "class": "tag" }, "server note"));
+    aside.appendChild(document.createTextNode(" " + (run.reasons || []).concat(run.explanation || []).join(" ")));
+    box.appendChild(aside);
+    announce.textContent = head + " Risk " + Math.round(run.risk.score) + " out of 100, " + run.risk.band + ".";
     setBusy(which, false);
   }
 
@@ -202,18 +231,18 @@
     var parts = [];
     var inj = a.injected;
     if (inj.description) { parts.push("In the change description: " + inj.description); }
-    Object.keys(inj.tool_description).forEach(function (t) { parts.push("Added to the " + t + " tool description: " + inj.tool_description[t]); });
+    Object.keys(inj.tool_description).forEach(function (t) { parts.push("Added to the help text of the " + t + " tool: " + inj.tool_description[t]); });
     Object.keys(inj.rogue_tools).forEach(function (t) { parts.push("A fake tool from another server, " + t + ": " + inj.rogue_tools[t]); });
-    inj.tool_result.forEach(function (r) { parts.push("Planted in what " + r.tool + " returns: " + JSON.stringify(r.merge || r.replace)); });
-    inj.sampling_message.forEach(function (m) { parts.push("Sent as a server message: " + m); });
+    inj.tool_result.forEach(function (r) { parts.push("Planted in the reply from " + r.tool + ": " + JSON.stringify(r.merge || r.replace)); });
+    inj.sampling_message.forEach(function (m) { parts.push("Sent as a message from the server: " + m); });
     return parts.join("\n");
   }
 
   async function playAttack(a) {
     var token = ++runToken;
     setBusy("attack", true);
-    var body = reset(a.title, a.id);
-    body.appendChild(el("p", { "class": "goal" }, "Goal: " + (GOAL[a.goal] || a.goal) + ". Attacker: " + a.attacker + "."));
+    var body = reset(LABELS[a.id] || a.title, a.id);
+    body.appendChild(el("p", { "class": "goal" }, "What the attacker wanted: " + (GOAL[a.goal] || a.goal).toLowerCase() + ". " + (WHO[a.attacker] || "")));
     var box = el("div", { "class": "planted" });
     box.appendChild(el("span", { "class": "planted__label" }, "What the attacker planted"));
     box.appendChild(el("p", { "class": "planted__text" }, planted(a)));
@@ -222,7 +251,7 @@
     body.appendChild(list);
 
     var lines = a.events.filter(function (e) { return e.phase === "agent"; }).map(function (e) {
-      return { kind: "agent", who: "agent", text: e.tool + "  " + (e.ok ? (e.decision ? "decision: " + e.decision : "ok") : "refused") };
+      return { kind: "agent", who: "assistant", text: e.tool + "  " + (e.ok ? (e.decision ? "decision: " + decisionWord(e.decision) : "ok") : "refused") };
     });
     a.steered.forEach(function (s) {
       var why = s.ok ? "went through" : (LAYER[s.blocked_by] || s.error || "refused") + (s.blocked_by === "action_policy" ? s.rule : "");
@@ -230,9 +259,9 @@
     });
     var refusals = a.audit.filter(function (e) { return e.decision === "blocked"; });
     var unsent = a.steered.every(function (s) { return !s.reached_server; });
-    var chainText = " Chain " + (a.audit_chain_verified ? "verifies." : "does not verify.");
+    var chainText = a.audit_chain_verified ? " The log still checks out." : " The log no longer checks out.";
     lines.push({
-      kind: "audit", who: "audit log",
+      kind: "audit", who: "log",
       text: unsent && !refusals.length
         ? "Stopped before it was sent, so nothing reached the server to log." + chainText
         : refusals.length + " refusal" + (refusals.length === 1 ? "" : "s") + " written to the log." + chainText
@@ -240,9 +269,9 @@
     if (!(await playLines("attack", token, list, lines))) { return; }
     await wait(160);
     if (token !== runToken) { return; }
-    var head = a.attack_succeeded ? "The attack had an effect." : "Contained. Nothing the planted text asked for happened.";
+    var head = a.attack_succeeded ? "The attack worked." : "Contained. Nothing the planted text asked for happened.";
     var v = verdict(body, !a.attack_succeeded, head);
-    v.appendChild(el("p", { "class": "verdict__aside" }, "The agent's own decision still came from the server's rules, not from the planted text."));
+    v.appendChild(el("p", { "class": "verdict__aside" }, "The assistant's final decision still came from Warden's rules, not from the planted text."));
     announce.textContent = head;
     setBusy("attack", false);
   }
@@ -286,9 +315,9 @@
   }
 
   var EDITS = [
-    { label: "Claim a person, not the agent, approved the dev change", find: "\"persona\":\"agent\"", put: "\"persona\":\"human\"", where: "cr-001" },
-    { label: "Change the frozen prod request from deny to approve", find: "\"decision\":\"deny\"", put: "\"decision\":\"auto_approve\"", where: "cr-003" },
-    { label: "Lower its recorded risk score to 5", find: /"risk_score":[0-9.]+/, put: "\"risk_score\":5.0", where: "cr-003" }
+    { label: "Claim a person, not the assistant, approved the safe change", find: "\"persona\":\"agent\"", put: "\"persona\":\"human\"", where: "cr-001" },
+    { label: "Turn the blocked change into an approved one", find: "\"decision\":\"deny\"", put: "\"decision\":\"auto_approve\"", where: "cr-003" },
+    { label: "Lower the blocked change's risk score to 5", find: /"risk_score":[0-9.]+/, put: "\"risk_score\":5.0", where: "cr-003" }
   ];
 
   // Walks the chain top to bottom, one row at a time, so the break shows where it starts and
@@ -301,7 +330,7 @@
     ctx.apply.disabled = true;
     ctx.undo.disabled = true;
     ctx.status.dataset.ok = "";
-    ctx.text.textContent = "of " + ctx.chain.length + " verified so far.";
+    ctx.text.textContent = "of " + ctx.chain.length + " checked so far.";
     ctx.rows.forEach(function (r) { r.dataset.state = "pending"; r.cells[5].textContent = "…"; });
     for (var i = 0; i < ctx.chain.length; i++) {
       var entry = ctx.chain[i];
@@ -319,7 +348,7 @@
         hashCell.textContent = entry.entry_hash.slice(0, 12);
       }
       row.dataset.state = ok ? "ok" : (broken ? "broken" : "edited");
-      row.cells[5].textContent = ok ? "verified" : (broken ? "after the break" : "hash does not match");
+      row.cells[5].textContent = ok ? "checks out" : (broken ? "cannot be trusted" : "seal broken here");
       if (!ok) { broken = true; } else { good += 1; }
       // Rows from the edit down slide right together, like a strip of paper torn at that line.
       // The offset goes straight onto the five cells, not through an inherited custom property.
@@ -339,8 +368,8 @@
     countTo(ctx.count, good);
     ctx.status.dataset.ok = String(!broken);
     ctx.text.textContent = broken
-      ? "of " + ctx.chain.length + " entries verify. The edit shows, and every entry after it can no longer be trusted."
-      : "of " + ctx.chain.length + " entries verify. Every entry hashes to the value stored after it.";
+      ? "of " + ctx.chain.length + " entries check out. The edit was caught, and every entry after it can no longer be trusted."
+      : "of " + ctx.chain.length + " entries check out. Nothing in the log was changed.";
     announce.textContent = good + " " + ctx.text.textContent;
     ctx.apply.disabled = false;
     ctx.undo.disabled = !broken;
@@ -350,12 +379,12 @@
   function playTamper() {
     var token = ++runToken;
     setBusy("tamper", true);
-    var body = reset("The audit log from the two decisions above", DATA.chain.length + " entries, SHA-256 chained");
+    var body = reset("The log from the two decisions above", DATA.chain.length + " entries, each sealed to the one before");
     var chain = DATA.chain.map(function (e) { return Object.assign({}, e); });
     var table = el("table", { "class": "chain", translate: "no" });
     var thead = el("thead");
     var head = el("tr");
-    ["", "#", "action", "request", "hash", "check"].forEach(function (h, i) {
+    ["", "#", "what happened", "request", "seal", "check"].forEach(function (h, i) {
       head.appendChild(el("th", { scope: "col" }, h));
       if (i === 0) { head.lastChild.appendChild(el("span", { "class": "sr-only" }, "chain link")); }
     });
@@ -366,7 +395,7 @@
       var tr = el("tr", { "data-state": "pending" });
       tr.appendChild(el("td", { "class": "link", "aria-hidden": "true" }));
       tr.appendChild(el("td", { "class": "c-seq" }, String(e.seq)));
-      tr.appendChild(el("td", {}, e.action + (e.decision && e.decision !== "granted" && e.decision !== "recorded" ? ": " + e.decision : "")));
+      tr.appendChild(el("td", {}, (ACTION[e.action] || e.action) + (e.decision && e.decision !== "granted" && e.decision !== "recorded" ? ": " + decisionWord(e.decision) : "")));
       tr.appendChild(el("td", {}, e.request_id || "-"));
       tr.appendChild(el("td", { "class": "c-hash" }, e.entry_hash.slice(0, 12)));
       tr.appendChild(el("td", { "class": "c-check" }, "…"));
@@ -392,11 +421,13 @@
     var pick = el("select", { "class": "select", id: "edit-pick" });
     EDITS.forEach(function (e, i) { pick.appendChild(el("option", { value: String(i) }, e.label)); });
     field.appendChild(pick);
-    var apply = el("button", { "class": "btn btn--small btn--deny", type: "button" }, "Edit the old entry");
+    var apply = el("button", { "class": "btn btn--small btn--deny", type: "button", "data-demo": "tamper-apply" }, "Edit the old entry");
     var undo = el("button", { "class": "btn btn--small", type: "button", disabled: "" }, "Put it back");
     controls.appendChild(field); controls.appendChild(apply); controls.appendChild(undo);
     body.appendChild(controls);
-    body.appendChild(el("p", { "class": "hint" }, "The check runs here in your browser with SHA-256 over the exact bytes the server hashed."));
+    var hint = el("p", { "class": "hint" }, "Your browser redoes the check itself, on the same bytes and with the same math the server used. ");
+    hint.appendChild(el("code", { "class": "tag" }, "SHA-256"));
+    body.appendChild(hint);
 
     var ctx = { chain: chain, rows: rows, status: status, text: text, count: count, apply: apply, undo: undo, pass: 0, token: token };
     apply.addEventListener("click", function () {
@@ -421,38 +452,48 @@
   function counters() {
     var c = DATA.counters;
     var box = document.getElementById("counters");
+    // The big figure is always today's value. Version 1 only appears in the caption, so the
+    // headline never shows a number the caption contradicts.
     var rows = [
-      { value: c.attacks_succeeded, unit: "of " + c.cases, label: "attacks had any effect" },
-      { value: c.unsafe_auto_approvals, label: "unsafe approvals" },
-      { value: c.cross_tenant_reads, label: "reads of another customer's data" },
-      { value: c.audit_gaps, label: "actions missing from the log" },
-      { value: c.reachable_writes_now, from: c.reachable_writes_v1, label: "writes an attacker could still make after a task",
-        note: c.reachable_writes_v1 + " in version 1, " + c.reachable_writes_now + " now" }
+      { value: c.attacks_succeeded, unit: "of " + c.cases, label: "Attacks that made anything happen",
+        note: "None of them got through." },
+      { value: c.unsafe_auto_approvals, label: "Unsafe changes approved without a person",
+        note: "Nothing risky slipped past." },
+      { value: c.cross_tenant_reads, label: "Times one customer saw another customer's data",
+        note: "Every customer stayed walled off." },
+      { value: c.audit_gaps, label: "Actions missing from the log",
+        note: "Every step was written down." },
+      { value: c.reachable_writes_now, label: "Ways an attacker could still change something after a task",
+        note: "Down from " + c.reachable_writes_v1 + " in the first version." }
     ];
-    var animated = [];
     rows.forEach(function (r) {
       var li = el("li");
       var label = el("span", { "class": "totals__label" }, r.label);
-      if (r.note) { label.appendChild(el("small", {}, r.note)); }
+      label.appendChild(el("small", {}, r.note));
       li.appendChild(label);
       var value = el("span", { "class": "totals__value" + (r.value === 0 ? " is-zero" : "") });
-      var n = el("span", {}, String(r.from !== undefined ? r.from : r.value));
-      value.appendChild(n);
+      value.appendChild(el("span", {}, String(r.value)));
       if (r.unit) { value.appendChild(el("small", {}, r.unit)); }
       li.appendChild(value);
       box.appendChild(li);
-      if (r.from !== undefined) { animated.push({ node: n, from: r.from, to: r.value }); }
     });
-    var src = el("p", { "class": "source" }, "Source: " + c.source + ". With the boundary switched off, " + c.ablation_attacks_succeeded + " of " + c.cases + " attacks worked. Version 1 was measured on " + c.v1_cases + " attacks.");
+    var src = el("p", { "class": "source" }, "With Warden's protective layers switched off on purpose, " + c.ablation_attacks_succeeded +
+      " of the " + c.cases + " attacks worked, so the layers are what stop them. The attacks are scripted, so this shows what a fully obedient assistant could do, not how often a real one obeys. The first version was tested on a smaller set of " + c.v1_cases + ". ");
+    c.source.split(", ").forEach(function (f) { src.appendChild(el("code", { "class": "tag" }, f)); src.appendChild(document.createTextNode(" ")); });
     box.parentNode.appendChild(src);
+  }
 
-    // The version 1 figure counts down to today's once the row is on screen, so the drop is seen, not just read.
-    function run() { animated.forEach(function (a) { countTo(a.node, a.to, 0, a.from); }); }
-    if (!("IntersectionObserver" in window) || reduced()) { run(); return; }
+  // The page turns to ink while the totals cross the middle of the screen, then back to paper.
+  // CSS registers the colour tokens so the swap tweens, and reduced motion drops the transition.
+  function themeFlip() {
+    var target = document.getElementById("numbers");
+    if (!target || !("IntersectionObserver" in window)) { return; }
     var io = new IntersectionObserver(function (entries) {
-      if (entries.some(function (e) { return e.isIntersecting; })) { io.disconnect(); setTimeout(run, 250); }
-    }, { threshold: 0.6 });
-    io.observe(box.lastChild);
+      entries.forEach(function (e) {
+        if (e.isIntersecting) { document.body.dataset.theme = "ink"; } else { delete document.body.dataset.theme; }
+      });
+    }, { rootMargin: "-50% 0px -50% 0px" });
+    io.observe(target);
   }
 
   /* ------------------------------------------------------------------ wiring */
@@ -464,15 +505,15 @@
         groups[a.goal] = el("optgroup", { label: GOAL[a.goal] || a.goal });
         picker.appendChild(groups[a.goal]);
       }
-      groups[a.goal].appendChild(el("option", { value: a.id }, a.title));
+      groups[a.goal].appendChild(el("option", { value: a.id }, LABELS[a.id] || a.title));
     });
   }
 
   function press(which) {
     document.querySelectorAll("[data-run]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.run === which)); });
     announce.textContent = "";
-    if (which === "safe") { playDecision("safe", DATA.safe, "A dev feature flag", DATA.safe.request_id); }
-    if (which === "dangerous") { playDecision("dangerous", DATA.dangerous, "A prod change inside a freeze window", DATA.dangerous.request_id); }
+    if (which === "safe") { playDecision("safe", DATA.safe, "Turning on a small switch in a test system", DATA.safe.request_id); }
+    if (which === "dangerous") { playDecision("dangerous", DATA.dangerous, "Changing the live system during a freeze", DATA.dangerous.request_id); }
     if (which === "attack") {
       var a = DATA.attacks.filter(function (x) { return x.id === picker.value; })[0] || DATA.attacks[0];
       playAttack(a);
@@ -487,15 +528,17 @@
     picker.disabled = true;
     return;
   }
-  document.querySelector("[data-w-badge]").textContent = "commit " + DATA.commit + ", " + DATA.generated_at.slice(0, 10);
-  document.querySelector("[data-w-provenance]").textContent = "Recorded with " + DATA.recorded_with + ".";
-  document.querySelector("[data-w-attack-count]").textContent = "one of " + DATA.attacks.length + " recorded";
+  document.querySelector("[data-w-badge]").textContent = DATA.generated_at.slice(0, 10) + ", version " + DATA.commit;
+  document.querySelector("[data-w-provenance]").textContent = DATA.commit + ", " + DATA.generated_at.slice(0, 10);
+  document.querySelector("[data-w-attack-count]").textContent = "one of " + DATA.attacks.length + " recorded tries";
   fillPicker();
   // Start on a case the server itself refuses and logs, the clearest one to watch.
   picker.value = "uaa-rp-01";
+  idTag.textContent = picker.value;
   counters();
+  themeFlip();
   document.querySelectorAll("[data-run]").forEach(function (b) {
     b.addEventListener("click", function () { press(b.dataset.run); });
   });
-  picker.addEventListener("change", function () { press("attack"); });
+  picker.addEventListener("change", function () { idTag.textContent = picker.value; press("attack"); });
 })();
