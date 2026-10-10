@@ -4,10 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Warden demo</title>
-<meta name="description" content="Warden approves boring changes to live software, blocks dangerous ones, and cannot be talked into a bad decision by a tricked AI assistant. This page replays recorded runs.">
+<meta name="description" content="Warden approves boring changes to live software and blocks dangerous ones. A tricked AI assistant cannot talk it into a bad decision. This page replays recorded runs.">
 <meta name="theme-color" content="#f3f2ee">
 <meta property="og:title" content="Warden demo">
-<meta property="og:description" content="Replays of recorded runs: a safe change, a dangerous change, a planted-instruction attack, and an edited log that your browser catches.">
+<meta property="og:description" content="This page replays four recorded runs. They show a safe change, a dangerous change and an attack. The last one shows an edited log that your browser catches.">
 <meta property="og:type" content="website">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%2317191b'/%3E%3Cpath d='M7 9h18M7 16h18M7 23h11' stroke='%23f3f2ee' stroke-width='2.5'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -23,13 +23,13 @@
   <div class="mast__rule"></div>
   <div class="mast__grid">
     <div>
-      <p class="eyebrow">A replay of recorded runs</p>
+      <p class="eyebrow">Recorded runs</p>
       <h1>Warden</h1>
-      <p class="mast__lede">An automated security guard for changes to live software.</p>
-      <p class="mast__body">It approves boring ones, blocks dangerous ones, asks a human only when unsure, keeps an unerasable log, and cannot be talked into a bad decision by an AI assistant that was tricked.</p>
+      <p class="mast__lede">It is an automated security guard for changes to live software.</p>
+      <p class="mast__body">It approves boring changes and blocks dangerous ones. It asks a person only when it is unsure. Its log shows any later edit. A tricked AI assistant cannot talk it into a bad decision.</p>
     </div>
     <aside class="mast__note" aria-label="About this page">
-      <p>Every button below replays a run that was recorded from the real code. Nothing runs live on this page.</p>
+      <p>Each button below replays a recording of the real code. Nothing runs live on this page.</p>
       <dl>
         <dt>recorded</dt><dd><a href="data/replay.json" data-w-badge>Recorded runs</a></dd>
         <dt>source</dt><dd><a href="https://github.com/samad-zeeshan/Warden">samad-zeeshan/Warden</a></dd>
@@ -57,14 +57,14 @@
     <div class="field">
       <label for="attack-pick">Attack to replay <code class="tag" id="attack-id"></code></label>
       <select class="select" id="attack-pick"></select>
-      <p class="hint">Each attack hides instructions somewhere the AI assistant reads: the change's description, a tool's reply, a tool's help text, a message from the server, or a fake tool. Some split the instructions across two places.</p>
+      <p class="hint">Each attack hides instructions in a place that the AI assistant reads. That place can be the description of the change, a tool's reply or a tool's help text. It can also be a message from the server or a fake tool. Some attacks put the instructions in two places.</p>
     </div>
 
     <div class="stage" id="stage">
       <div class="stage__empty">
         <div>
           <strong>Press a button to start.</strong>
-          <p>Each replay prints what the AI assistant asked for, step by step, then what Warden decided. A freeze is a period when no live changes are allowed.</p>
+          <p>Each replay shows the requests of the AI assistant in order. Then it shows the decision of Warden. A freeze is a period when the team allows no live changes.</p>
         </div>
       </div>
     </div>
@@ -76,7 +76,7 @@
     <div class="section__head">
       <p class="eyebrow"><span>02</span> The totals</p>
       <h2 id="numbers-title">Every attack, counted</h2>
-      <p class="section__lede">These totals cover all the recorded attacks, not only the one above. Zero is the result Warden is built for.</p>
+      <p class="section__lede">These totals cover all the recorded attacks, not only the one above. Zero is the goal for each total.</p>
     </div>
     <ul class="totals" id="counters"></ul>
   </section>
@@ -90,7 +90,7 @@
     <p class="foot__voice">Boring changes go through. Dangerous ones stop. The log remembers both.</p>
     <dl class="foot__meta">
       <dt>code</dt><dd><a href="https://github.com/samad-zeeshan/Warden">github.com/samad-zeeshan/Warden</a></dd>
-      <dt>data</dt><dd>Every run was recorded from the real code with the same connection the AI assistant uses. <code class="tag" data-w-provenance></code></dd>
+      <dt>data</dt><dd>Each run is a recording of the real code. It used the same connection as the AI assistant. <code class="tag" data-w-provenance></code></dd>
       <dt>licence</dt><dd>MIT</dd>
     </dl>
   </div>

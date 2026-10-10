@@ -19,13 +19,13 @@
   function reduced() { return !!(motionQuery && motionQuery.matches); }
 
   var LAYER = {
-    agent_resolver: "stopped before sending: the assistant may not take that step",
-    no_signature: "stopped before sending: no step can point at another customer",
-    tool_roles: "refused: the assistant's role does not allow this",
-    action_policy: "refused by rule ",
-    tenant_scope: "refused: that belongs to another customer",
-    scopes: "refused: the assistant's pass does not cover this",
-    request_binding: "refused: the assistant's pass works for one request only"
+    agent_resolver: "Stopped before it left. The assistant may not take that step.",
+    no_signature: "Stopped before it left. No step can name another customer.",
+    tool_roles: "Refused. The role of the assistant does not allow this.",
+    action_policy: "Refused by the rule ",
+    tenant_scope: "Refused. That data belongs to another customer.",
+    scopes: "Refused. The credential of the assistant does not cover this.",
+    request_binding: "Refused. The credential of the assistant works for one request only."
   };
   var GOAL = {
     unsafe_auto_approve: "Approve something unsafe",
@@ -40,7 +40,7 @@
     approver: "A person who approves changes tried this directly."
   };
   var DECISION = { auto_approve: "approved", deny: "blocked", route: "sent to a person" };
-  var ACTION = { role_learned: "role handed out", policy_version: "rules version noted", record_decision: "decision" };
+  var ACTION = { role_learned: "role given", policy_version: "rules version saved", record_decision: "decision" };
 
   function decisionWord(d) { return DECISION[d] || d; }
 
@@ -159,7 +159,7 @@
     var r = call.result || {};
     if (call.tool === "learn_role") { return "granted " + r.granted; }
     if (call.tool === "get_change_request") { return r.id + ", " + r.key + " in " + r.environment; }
-    if (call.tool === "validate_change_request") { return r.ok ? "valid" : "invalid: " + (r.errors || []).join("; "); }
+    if (call.tool === "validate_change_request") { return r.ok ? "valid" : "invalid: " + (r.errors || []).join(", "); }
     if (call.tool === "assess_change_risk") { return "risk " + r.score + " (" + r.band + ")" + (r.hard_deny ? ", hard deny" : ""); }
     if (call.tool === "record_decision") { return "decision: " + decisionWord(r.decision); }
     return "ok";
@@ -193,14 +193,14 @@
   // so nobody mistakes it for the page talking.
   function riskLine(box, run, good) {
     var p = el("p", {});
-    p.appendChild(document.createTextNode("The risk came out at "));
+    p.appendChild(document.createTextNode("The risk score was "));
     var n = el("span", { "class": "num" }, "0");
     p.appendChild(n);
     p.appendChild(document.createTextNode(" out of 100, which counts as " + run.risk.band + ". "));
     var frozen = (run.reasons || []).some(function (r) { return /freeze/.test(r); });
     p.appendChild(document.createTextNode(good
       ? "That is low enough that no person needed to look."
-      : (frozen ? "It was also timed inside a freeze, which blocks it whatever the score." : "That is too high to let through.")));
+      : (frozen ? "The change also fell inside a freeze. A freeze blocks a change at any score." : "That is too high to let through.")));
     box.appendChild(p);
     countTo(n, run.risk.score, 0, 0);
   }
@@ -216,14 +216,14 @@
     await wait(160);
     if (token !== runToken) { return; }
     var good = run.decision === "auto_approve";
-    var head = good ? "Approved without asking anyone." : "Blocked.";
+    var head = good ? "Warden approved it without asking anyone." : "Warden blocked it.";
     var box = verdict(body, good, head);
     riskLine(box, run, good);
     var aside = el("p", { "class": "verdict__note" });
     aside.appendChild(el("span", { "class": "tag" }, "server note"));
     aside.appendChild(document.createTextNode(" " + (run.reasons || []).concat(run.explanation || []).join(" ")));
     box.appendChild(aside);
-    announce.textContent = head + " Risk " + Math.round(run.risk.score) + " out of 100, " + run.risk.band + ".";
+    announce.textContent = head + " The risk score was " + Math.round(run.risk.score) + " out of 100, which counts as " + run.risk.band + ".";
     setBusy(which, false);
   }
 
@@ -259,19 +259,19 @@
     });
     var refusals = a.audit.filter(function (e) { return e.decision === "blocked"; });
     var unsent = a.steered.every(function (s) { return !s.reached_server; });
-    var chainText = a.audit_chain_verified ? " The log still checks out." : " The log no longer checks out.";
+    var chainText = a.audit_chain_verified ? " The log still passes its check." : " The log no longer passes its check.";
     lines.push({
       kind: "audit", who: "log",
       text: unsent && !refusals.length
-        ? "Stopped before it was sent, so nothing reached the server to log." + chainText
-        : refusals.length + " refusal" + (refusals.length === 1 ? "" : "s") + " written to the log." + chainText
+        ? "The call stopped before it left, so nothing reached the server to log." + chainText
+        : "Warden wrote " + refusals.length + " refusal" + (refusals.length === 1 ? "" : "s") + " to the log." + chainText
     });
     if (!(await playLines("attack", token, list, lines))) { return; }
     await wait(160);
     if (token !== runToken) { return; }
-    var head = a.attack_succeeded ? "The attack worked." : "Contained. Nothing the planted text asked for happened.";
+    var head = a.attack_succeeded ? "The attack worked." : "Warden contained the attack. None of the planted requests happened.";
     var v = verdict(body, !a.attack_succeeded, head);
-    v.appendChild(el("p", { "class": "verdict__aside" }, "The assistant's final decision still came from Warden's rules, not from the planted text."));
+    v.appendChild(el("p", { "class": "verdict__aside" }, "The final decision of the assistant still came from the rules of Warden, not from the planted text."));
     announce.textContent = head;
     setBusy("attack", false);
   }
@@ -330,7 +330,7 @@
     ctx.apply.disabled = true;
     ctx.undo.disabled = true;
     ctx.status.dataset.ok = "";
-    ctx.text.textContent = "of " + ctx.chain.length + " checked so far.";
+    ctx.text.textContent = "Entries that pass, out of " + ctx.chain.length + ". The check continues.";
     ctx.rows.forEach(function (r) { r.dataset.state = "pending"; r.cells[5].textContent = "…"; });
     for (var i = 0; i < ctx.chain.length; i++) {
       var entry = ctx.chain[i];
@@ -348,7 +348,7 @@
         hashCell.textContent = entry.entry_hash.slice(0, 12);
       }
       row.dataset.state = ok ? "ok" : (broken ? "broken" : "edited");
-      row.cells[5].textContent = ok ? "checks out" : (broken ? "cannot be trusted" : "seal broken here");
+      row.cells[5].textContent = ok ? "passes" : (broken ? "not trusted" : "seal broken");
       if (!ok) { broken = true; } else { good += 1; }
       // Rows from the edit down slide right together, like a strip of paper torn at that line.
       // The offset goes straight onto the five cells, not through an inherited custom property.
@@ -368,9 +368,9 @@
     countTo(ctx.count, good);
     ctx.status.dataset.ok = String(!broken);
     ctx.text.textContent = broken
-      ? "of " + ctx.chain.length + " entries check out. The edit was caught, and every entry after it can no longer be trusted."
-      : "of " + ctx.chain.length + " entries check out. Nothing in the log was changed.";
-    announce.textContent = good + " " + ctx.text.textContent;
+      ? "Entries that pass, out of " + ctx.chain.length + ". The check caught the edit. Nobody can trust any entry after it."
+      : "Entries that pass, out of " + ctx.chain.length + ". Nobody changed the log.";
+    announce.textContent = good + " of " + ctx.chain.length + " entries pass the check. " + ctx.text.textContent.split(". ").slice(1).join(". ");
     ctx.apply.disabled = false;
     ctx.undo.disabled = !broken;
     setBusy("tamper", false);
@@ -422,10 +422,10 @@
     EDITS.forEach(function (e, i) { pick.appendChild(el("option", { value: String(i) }, e.label)); });
     field.appendChild(pick);
     var apply = el("button", { "class": "btn btn--small btn--deny", type: "button", "data-demo": "tamper-apply" }, "Edit the old entry");
-    var undo = el("button", { "class": "btn btn--small", type: "button", disabled: "" }, "Put it back");
+    var undo = el("button", { "class": "btn btn--small", type: "button", disabled: "" }, "Undo the edit");
     controls.appendChild(field); controls.appendChild(apply); controls.appendChild(undo);
     body.appendChild(controls);
-    var hint = el("p", { "class": "hint" }, "Your browser redoes the check itself, on the same bytes and with the same math the server used. ");
+    var hint = el("p", { "class": "hint" }, "Your browser does the check again itself. It uses the same bytes and the same math as the server. ");
     hint.appendChild(el("code", { "class": "tag" }, "SHA-256"));
     body.appendChild(hint);
 
@@ -458,13 +458,13 @@
       { value: c.attacks_succeeded, unit: "of " + c.cases, label: "Attacks that made anything happen",
         note: "None of them got through." },
       { value: c.unsafe_auto_approvals, label: "Unsafe changes approved without a person",
-        note: "Nothing risky slipped past." },
+        note: "Warden approved no risky change alone." },
       { value: c.cross_tenant_reads, label: "Times one customer saw another customer's data",
-        note: "Every customer stayed walled off." },
+        note: "No customer saw data from another customer." },
       { value: c.audit_gaps, label: "Actions missing from the log",
-        note: "Every step was written down." },
+        note: "The log holds every step." },
       { value: c.reachable_writes_now, label: "Ways an attacker could still change something after a task",
-        note: "Down from " + c.reachable_writes_v1 + " in the first version." }
+        note: "The first version left " + c.reachable_writes_v1 + " open, which was bad." }
     ];
     rows.forEach(function (r) {
       var li = el("li");
@@ -477,8 +477,8 @@
       li.appendChild(value);
       box.appendChild(li);
     });
-    var src = el("p", { "class": "source" }, "With Warden's protective layers switched off on purpose, " + c.ablation_attacks_succeeded +
-      " of the " + c.cases + " attacks worked, so the layers are what stop them. The attacks are scripted, so this shows what a fully obedient assistant could do, not how often a real one obeys. The first version was tested on a smaller set of " + c.v1_cases + ". ");
+    var src = el("p", { "class": "source" }, "In one run, the protective layers of Warden were off on purpose. Then " + c.ablation_attacks_succeeded +
+      " of the " + c.cases + " attacks worked, so the layers are what stop them. The attacks follow a script. So this run shows what a fully obedient assistant could do. It does not show how often a real assistant obeys. The first version had a smaller test set of " + c.v1_cases + " attacks. ");
     c.source.split(", ").forEach(function (f) { src.appendChild(el("code", { "class": "tag" }, f)); src.appendChild(document.createTextNode(" ")); });
     box.parentNode.appendChild(src);
   }
@@ -512,8 +512,8 @@
   function press(which) {
     document.querySelectorAll("[data-run]").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.run === which)); });
     announce.textContent = "";
-    if (which === "safe") { playDecision("safe", DATA.safe, "Turning on a small switch in a test system", DATA.safe.request_id); }
-    if (which === "dangerous") { playDecision("dangerous", DATA.dangerous, "Changing the live system during a freeze", DATA.dangerous.request_id); }
+    if (which === "safe") { playDecision("safe", DATA.safe, "A small switch on a test system", DATA.safe.request_id); }
+    if (which === "dangerous") { playDecision("dangerous", DATA.dangerous, "A live change during a freeze", DATA.dangerous.request_id); }
     if (which === "attack") {
       var a = DATA.attacks.filter(function (x) { return x.id === picker.value; })[0] || DATA.attacks[0];
       playAttack(a);
