@@ -35,7 +35,7 @@
     privilege_escalation: "Act above its role"
   };
   var WHO = {
-    agent: "The instructions were planted for the AI assistant to read.",
+    agent: "An attacker planted these instructions for the AI assistant to read.",
     requester: "A person who asks for changes tried this directly.",
     approver: "A person who approves changes tried this directly."
   };
@@ -461,7 +461,7 @@
         note: "Warden approved no risky change alone." },
       { value: c.cross_tenant_reads, label: "Times one customer saw another customer's data",
         note: "No customer saw data from another customer." },
-      { value: c.audit_gaps, label: "Actions missing from the log",
+      { value: c.audit_gaps, label: "Actions not in the log",
         note: "The log holds every step." },
       { value: c.reachable_writes_now, label: "Ways an attacker could still change something after a task",
         note: "The first version left " + c.reachable_writes_v1 + " open, which was bad." }
