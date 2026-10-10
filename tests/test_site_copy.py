@@ -143,3 +143,23 @@ def test_sentences_stay_short():
 def test_no_em_dash_or_semicolon_in_prose():
     for where, text in _all_text():
         assert "—" not in text and ";" not in text, f"{where}: {text}"
+
+
+# A rough passive check: a form of "be", then at most one word, then a past participle.
+# It also catches adjectives such as "automated", so the allowlist below names the exceptions.
+PARTICIPLES = ["made", "done", "found", "given", "held", "kept", "left", "run", "seen", "sent",
+               "shown", "taken", "written", "built", "caught"]
+PASSIVE = re.compile(r"\b(?:is|are|was|were|be|been|being)\s+(?:\w+\s+)?(?:\w+ed|"
+                     + "|".join(PARTICIPLES) + r")\b", re.I)
+PASSIVE_ALLOWED = {
+    # "automated" is an adjective here, not a passive verb.
+    "Warden is an automated security guard for changes to live software.",
+    "It is an automated security guard for changes to live software.",
+}
+
+
+def test_no_passive_voice():
+    for where, text in _all_text():
+        for sentence in _sentences(text):
+            if sentence not in PASSIVE_ALLOWED:
+                assert not PASSIVE.search(sentence), f"passive in {where}: {sentence}"
